@@ -1,20 +1,57 @@
 #define LINUX
-
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/irq.h>
+#include <linux/io.h>
+#include <linux/irqdomain.h>
+#include <linux/interrupt.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/netdevice.h>
+#include <linux/sched.h>
+#include <linux/signal.h> 
+#include <linux/irq.h>
+#include <linux/interrupt.h>
+#include <asm/irq.h>
 
 #define DNAME "pdmahwsim"
 
+static void *buffer_dma;
+static struct net_device *pdmahw_d;
+int irq = 35;
+
+/* Interrupt handler, no idea what I am doing here */
+irqreturn_t pdmahwsim_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+{
+	printk(KERN_ERR "Interrupt received %d", irq);
+	return 0;	
+}
 
 static int pdmahwsim_open(struct net_device *net)
 {
+	int i;
+	/*
+	for (i=0; i<51; i++) {
+		if (can_request_irq(i, IRQF_DISABLED))
+			irq = i;
+	}
+	*/
+	printk(KERN_ERR "IRQ selected %d", irq);
+	if (request_irq(irq, pdmahwsim_interrupt, IRQF_DISABLED, "pdmahwsim", NULL)) {
+		printk(KERN_ERR "Error in installing IRQ %d", irq);
+		return -1;
+	}
+	memcpy(net->dev_addr, "\0SNUL0", ETH_ALEN);
+	netif_start_queue(net);
 	return 0;
 }
 
 static int pdmahwsim_stop(struct net_device *net)
 {
+	netif_stop_queue(net);
 	return 0;
 }
 
@@ -39,8 +76,6 @@ static void pdmahwsim_init(struct net_device *net)
 }
 
 /* Split in two files */
-static void *buffer_dma;
-static struct net_device *pdmahw_d;
 static int __init pdmahwsim_init_module(void)
 {
 	int result;
