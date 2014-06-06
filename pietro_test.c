@@ -1,7 +1,6 @@
 #define LINUX
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/irq.h>
 #include <linux/io.h>
 #include <linux/irqdomain.h>
 #include <linux/interrupt.h>
@@ -21,37 +20,48 @@
 
 static void *buffer_dma;
 static struct net_device *pdmahw_d;
-int irq = 35;
+static unsigned int irq;
 
 /* Interrupt handler, no idea what I am doing here */
-irqreturn_t pdmahwsim_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+static irqreturn_t pdmahwsim_interrupt(int irq, void *dev_id)
 {
-	printk(KERN_ERR "Interrupt received %d", irq);
-	return 0;	
+	printk(KERN_ERR "Interrupt received %d\n", irq);
+	return IRQ_HANDLED;	
 }
 
 static int pdmahwsim_open(struct net_device *net)
 {
-	int i;
+	int ret;
+	unsigned long firq;
+
+	firq = probe_irq_on();
+	printk(KERN_ERR "firq : %lx", firq);
+	probe_irq_off(firq);
+	
+	/* TODO: don't bother with the parameter and choose the first free IRQ */
 	/*
 	for (i=0; i<51; i++) {
 		if (can_request_irq(i, IRQF_DISABLED))
 			irq = i;
 	}
 	*/
-	printk(KERN_ERR "IRQ selected %d", irq);
-	if (request_irq(irq, pdmahwsim_interrupt, IRQF_DISABLED, "pdmahwsim", NULL)) {
-		printk(KERN_ERR "Error in installing IRQ %d", irq);
+	ret = request_irq(irq, pdmahwsim_interrupt, IRQF_DISABLED, "pdmahwsim", NULL);
+	if (ret) {
+		printk("H: %p IRQ: %d - code %d , EIO %d , EINVAL %d\n", pdmahwsim_interrupt, irq, ret, EIO, EINVAL);
 		return -1;
 	}
+	printk(KERN_ERR "IRQ  %d successfully installed!\n", irq);
 	memcpy(net->dev_addr, "\0SNUL0", ETH_ALEN);
+	mdelay(100);
 	netif_start_queue(net);
+	asm("int $0x4");
 	return 0;
 }
 
 static int pdmahwsim_stop(struct net_device *net)
 {
 	netif_stop_queue(net);
+	free_irq(irq, NULL); 
 	return 0;
 }
 
@@ -104,8 +114,8 @@ void pdmahwsim_exit_module(void)
 	free_netdev(pdmahw_d);
 	printk(KERN_ALERT "Goodbye %s\n", KBUILD_MODNAME);
 }
-
 MODULE_LICENSE("GPL");
+module_param(irq, int, 0);
 module_init(pdmahwsim_init_module);
 module_exit(pdmahwsim_exit_module);
 
